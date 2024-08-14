@@ -1,0 +1,866 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+enum DatasetFileUploadStatus {
+    PENDING
+    DOWNLOADING
+    PROCESSING
+    SAVING
+    COMPLETE
+    ERROR
+}
+
+model DatasetFileUpload {
+    id String @id @default(uuid()) @db.Uuid
+
+    datasetId    String?                 @db.Uuid
+    dataset      Dataset?                @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+    nodeId       String?                 @db.Uuid
+    node         Node?                   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+    blobName     String
+    fileName     String
+    fileSize     Int
+    progress     Int                     @default(0) // Percentage
+    status       DatasetFileUploadStatus @default(PENDING)
+    uploadedAt   DateTime
+    visible      Boolean                 @default(true)
+    errorMessage String?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model Dataset {
+    id String @id @default(uuid()) @db.Uuid
+
+    name                    String
+    fineTunes               FineTune[]
+    datasetFileUploads      DatasetFileUpload[]
+    pruningRules            PruningRule[]
+    trainingRatio           Float               @default(0.8)
+    // TODO: convert to type JSON for better kysely parsing
+    enabledComparisonModels ComparisonModel[]   @default([])
+
+    datasetEvals DatasetEval[]
+
+    nodeId String @db.Uuid
+    node   Node   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+    projectId String  @db.Uuid
+    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([projectId])
+}
+
+enum DatasetEntrySplit {
+    TRAIN
+    TEST
+}
+
+enum DatasetEntryProvenance {
+    REQUEST_LOG
+    UPLOAD
+    RELABELED_BY_MODEL
+    RELABELED_BY_HUMAN
+}
+
+model PruningRule {
+    id String @id @default(uuid()) @db.Uuid
+
+    textToMatch  String
+    tokensInText Int
+    matches      PruningRuleMatch[]
+
+    datasetId String?  @db.Uuid
+    dataset   Dataset? @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+    fineTuneId String?   @db.Uuid
+    fineTune   FineTune? @relation(fields: [fineTuneId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([datasetId, createdAt, id])
+}
+
+model PruningRuleMatch {
+    id            String      @id @default(uuid()) @db.Uuid
+    pruningRuleId String      @db.Uuid
+    pruningRule   PruningRule @relation(fields: [pruningRuleId], references: [id], onDelete: Cascade)
+
+    inputHash String
+
+    @@unique([inputHash, pruningRuleId])
+    @@index([pruningRuleId])
+}
+
+model PruningRulesChecked {
+    nodeHash          String
+    incomingInputHash String
+
+    @@unique([nodeHash, incomingInputHash])
+    @@index([incomingInputHash, nodeHash])
+}
+
+model Project {
+    id                    String   @id @default(uuid()) @db.Uuid
+    slug                  String   @unique() @default(dbgenerated("nanoid()")) @db.VarChar(10)
+    name                  String   @default("Project 1")
+    isPublic              Boolean  @default(false)
+    isHidden              Boolean  @default(false)
+    stripeCustomerId      String?
+    billable              Boolean  @default(true)
+    tagNames              String[] @default([]) // cached list of tag names for the project
+    rateLimit             Int      @default(3)
+    personalProjectUserId String?  @unique @db.Uuid
+    personalProjectUser   User?    @relation(fields: [personalProjectUserId], references: [id], onDelete: Cascade)
+    migrationKey          String?
+
+    createdAt              DateTime               @default(now())
+    updatedAt              DateTime               @updatedAt
+    projectUsers           ProjectUser[]
+    projectUserInvitations UserInvitation[]
+    datasets               Dataset[]
+    loggedCalls            LoggedCall[]
+    fineTunes              FineTune[]
+    apiKeys                ApiKey[]
+    usageLogs              UsageLog[]
+    cachedResponses        CachedResponse[]
+    invoices               Invoice[]
+    credits                CreditAdjustment[]
+    nodes                  Node[]
+    datasetEntryInputs     DatasetEntryInput[]
+    datasetEntryOutputs    DatasetEntryOutput[]
+    cachedProcessedEntries CachedProcessedEntry[]
+    fineTuneTestingEntries FineTuneTestingEntry[]
+}
+
+enum ProjectUserRole {
+    ADMIN
+    MEMBER
+    VIEWER
+    OWNER
+}
+
+model ProjectUser {
+    id String @id @default(uuid()) @db.Uuid
+
+    role ProjectUserRole
+
+    projectId String   @db.Uuid
+    project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    userId String @db.Uuid
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([projectId, userId])
+}
+
+model LoggedCall {
+    id String @id @default(uuid()) @db.Uuid
+
+    requestedAt  DateTime
+    receivedAt   DateTime?
+    cacheHit     Boolean   @default(false)
+    reqPayload   Json?
+    respPayload  Json?
+    // The HTTP status returned by the model provider
+    statusCode   Int?
+    // Should be null if the request was successful, and some string if the request failed.
+    errorMessage String?
+
+    // Derived fields
+    durationMs   Int?
+    inputTokens  Int?
+    outputTokens Int?
+    finishReason String?
+    completionId String?
+    cost         Float?
+
+    projectId String   @db.Uuid
+    project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    model       String?
+    tags        LoggedCallTag[]
+    nodeEntries NodeEntry[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([projectId, requestedAt])
+    @@index([projectId, model, updatedAt])
+    @@index([completionId])
+}
+
+model CachedResponse {
+    id String @id @default(uuid()) @db.Uuid
+
+    // cacheKey is a hash of the modelId and request payload
+    cacheKey     String
+    modelId      String
+    completionId String
+    respPayload  Json
+    inputTokens  Int
+    outputTokens Int
+
+    projectId String  @db.Uuid
+    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+
+    @@unique([projectId, cacheKey])
+    @@index([completionId])
+}
+
+model LoggedCallTag {
+    id        String  @id @default(uuid()) @db.Uuid
+    name      String
+    value     String?
+    projectId String  @db.Uuid
+
+    loggedCallId String     @db.Uuid
+    loggedCall   LoggedCall @relation(fields: [loggedCallId], references: [id], onDelete: Cascade)
+
+    @@unique([loggedCallId, name])
+    @@index(loggedCallId)
+    @@index([name, projectId])
+    @@index([projectId, name])
+    @@index([projectId, name, value])
+    @@index([value, name, projectId])
+}
+
+enum ApiKeyProvider {
+    OPENPIPE
+    OPENAI
+}
+
+model ApiKey {
+    id String @id @default(uuid()) @db.Uuid
+
+    name     String
+    apiKey   String
+    provider ApiKeyProvider @default(OPENPIPE)
+    readOnly Boolean        @default(false)
+
+    projectId String  @db.Uuid
+    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([projectId, apiKey])
+    @@index([apiKey])
+}
+
+model Account {
+    id                       String  @id @default(uuid()) @db.Uuid
+    userId                   String  @db.Uuid
+    type                     String
+    provider                 String
+    providerAccountId        String
+    refresh_token            String? @db.Text
+    refresh_token_expires_in Int?
+    access_token             String? @db.Text
+    expires_at               Int?
+    token_type               String?
+    scope                    String?
+    id_token                 String? @db.Text
+    session_state            String?
+    user                     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([provider, providerAccountId])
+}
+
+model Session {
+    id           String   @id @default(uuid()) @db.Uuid
+    sessionToken String   @unique
+    userId       String   @db.Uuid
+    expires      DateTime
+    user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum UserRole {
+    ADMIN
+    USER
+}
+
+model User {
+    id                  String    @id @default(uuid()) @db.Uuid
+    name                String?
+    gitHubUsername      String?
+    email               String?   @unique
+    emailVerified       DateTime?
+    image               String?
+    lastViewedProjectId String?   @db.Uuid
+
+    role UserRole @default(USER)
+
+    accounts              Account[]
+    sessions              Session[]
+    projectUsers          ProjectUser[]
+    projects              Project[]
+    sentUserInvitations   UserInvitation[]
+    createdNodes          Node[]
+    exportWeightsRequests ExportWeightsRequest[]
+    fineTunes             FineTune[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @default(now()) @updatedAt
+}
+
+model UserInvitation {
+    id String @id @default(uuid()) @db.Uuid
+
+    projectId       String          @db.Uuid
+    project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    email           String
+    role            ProjectUserRole
+    invitationToken String          @unique
+    senderId        String          @db.Uuid
+    sender          User            @relation(fields: [senderId], references: [id], onDelete: Cascade)
+    isCanceled      Boolean         @default(false)
+    createdAt       DateTime        @default(now())
+    updatedAt       DateTime        @updatedAt
+
+    @@index([projectId, email])
+}
+
+model VerificationToken {
+    identifier String
+    token      String   @unique
+    expires    DateTime
+
+    @@unique([identifier, token])
+}
+
+enum FineTuneStatus {
+    PENDING
+    STARTED
+    TRANSFERRING_TRAINING_DATA
+    TRAINING
+    DEPLOYED
+    ERROR
+}
+
+enum FineTuneProvider {
+    openpipe
+    openai
+}
+
+model FineTune {
+    id String @id @default(uuid()) @db.Uuid
+
+    slug                   String           @unique
+    provider               FineTuneProvider
+    baseModel              String
+    status                 FineTuneStatus   @default(PENDING)
+    errorMessage           String?
+    trainingBlobName       String?
+    trainingStartedAt      DateTime?
+    trainingFinishedAt     DateTime?
+    deploymentStartedAt    DateTime?
+    deploymentFinishedAt   DateTime?
+    numEpochs              Float?
+    numTrainingAutoretries Int              @default(0)
+    gpt4FallbackEnabled    Boolean          @default(false)
+    forceA10               Boolean          @default(false)
+
+    trainingEntries FineTuneTrainingEntry[]
+    testingEntries  FineTuneTestingEntry[]
+    pruningRules    PruningRule[]
+    usageLogs       UsageLog[]
+
+    datasetId String  @db.Uuid
+    dataset   Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+    projectId String  @db.Uuid
+    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    userId String? @db.Uuid
+    user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    trainingConfigOverrides Json?
+    trainingConfig          Json?
+    modalTrainingJobId      String?
+    huggingFaceModelId      String?
+    openaiTrainingJobId     String?
+    openaiModelId           String?
+    pipelineVersion         Int
+    exportWeightsRequests   ExportWeightsRequest[]
+
+    @@index([projectId])
+    @@index([datasetId])
+}
+
+model FineTuneTrainingEntry {
+    id                String @id @default(uuid()) @db.Uuid
+    prunedInputTokens Int?
+    outputTokens      Int?
+
+    nodeEntryPersistentId String
+
+    inputHash  String
+    outputHash String
+
+    fineTuneId String   @db.Uuid
+    fineTune   FineTune @relation(fields: [fineTuneId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([nodeEntryPersistentId, fineTuneId])
+    @@index([fineTuneId, createdAt, id])
+}
+
+enum ComparisonModel {
+    GPT_3_5_TURBO
+    GPT_4_0613
+    GPT_4_1106_PREVIEW
+    GPT_4_0125_PREVIEW
+}
+
+model FineTuneTestingEntry {
+    id String @id @default(uuid()) @db.Uuid
+
+    prunedInputTokens Int?
+
+    finishReason String?
+
+    errorMessage String?
+
+    // Used for querying both fine-tuned and comparison models
+    modelId    String
+    // Duplicates the modelId field, but Prisma needs it to make the fineTune relation work
+    fineTuneId String?   @db.Uuid
+    fineTune   FineTune? @relation(fields: [fineTuneId], references: [id], onDelete: Cascade)
+
+    inputHash  String
+    // for the modelId and inputHash, we cache the produced output
+    outputHash String?
+
+    projectId String  @db.Uuid
+    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([inputHash, modelId])
+    @@index([fineTuneId])
+    @@index([projectId])
+}
+
+enum DatasetEvalType {
+    FIELD_COMPARISON
+    HEAD_TO_HEAD
+}
+
+model DatasetEval {
+    id String @id @default(uuid()) @db.Uuid
+
+    name         String
+    instructions String?
+    type         DatasetEvalType @default(HEAD_TO_HEAD)
+
+    datasetEvalNodeEntries   DatasetEvalNodeEntry[]
+    datasetEvalOutputSources DatasetEvalOutputSource[]
+
+    datasetId String  @db.Uuid
+    dataset   Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([datasetId, name])
+}
+
+// Used to record which dataset entries should be evaluated for a given dataset eval
+model DatasetEvalNodeEntry {
+    id String @id @default(uuid()) @db.Uuid
+
+    results DatasetEvalResult[]
+
+    datasetEvalId String      @db.Uuid
+    datasetEval   DatasetEval @relation(fields: [datasetEvalId], references: [id], onDelete: Cascade)
+
+    nodeEntryPersistentId String
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([nodeEntryPersistentId, datasetEvalId])
+    @@index([datasetEvalId, nodeEntryPersistentId])
+    @@index([nodeEntryPersistentId, datasetEvalId])
+}
+
+// Used to record whether the dataset output and which comparison and
+// fine-tuned models should be evaluated for a given dataset eval
+model DatasetEvalOutputSource {
+    id String @id @default(uuid()) @db.Uuid
+
+    // The id of the model, or "original" for the dataset output
+    modelId String
+
+    results           DatasetEvalResult[]
+    comparisonResults DatasetEvalResult[] @relation("comparison")
+
+    datasetEvalId String      @db.Uuid
+    datasetEval   DatasetEval @relation(fields: [datasetEvalId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([datasetEvalId, modelId])
+}
+
+enum DatasetEvalResultStatus {
+    PENDING
+    IN_PROGRESS
+    COMPLETE
+    ERROR
+}
+
+model DatasetEvalResult {
+    id String @id @default(uuid()) @db.Uuid
+
+    score               Float?
+    explanation         String?
+    errorMessage        String?
+    status              DatasetEvalResultStatus @default(PENDING)
+    judge               String?
+    nodeEntryInputHash  String
+    nodeEntryOutputHash String?
+
+    // For comparative evaluations, whether this was the first option presented
+    // to the judge
+    wasFirst Boolean?
+
+    comparisonResultId String? @db.Uuid // The id of the DatasetEvalResult to compare against
+
+    comparisonOutputSourceId String?                  @db.Uuid // The id of the DatasetEvalOutputSource to compare against
+    comparisonOutputSource   DatasetEvalOutputSource? @relation("comparison", fields: [comparisonOutputSourceId], references: [id], onDelete: Cascade)
+
+    datasetEvalNodeEntryId String               @db.Uuid
+    datasetEvalNodeEntry   DatasetEvalNodeEntry @relation(fields: [datasetEvalNodeEntryId], references: [id], onDelete: Cascade)
+
+    datasetEvalOutputSourceId String                  @db.Uuid
+    datasetEvalOutputSource   DatasetEvalOutputSource @relation(fields: [datasetEvalOutputSourceId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([datasetEvalNodeEntryId, nodeEntryInputHash, datasetEvalOutputSourceId, comparisonOutputSourceId])
+    @@index([nodeEntryInputHash, nodeEntryOutputHash, datasetEvalOutputSourceId])
+    @@index([comparisonResultId])
+}
+
+enum UsageType {
+    TRAINING
+    TESTING
+    EXTERNAL
+    CACHE_HIT
+}
+
+model UsageLog {
+    id String @id @default(uuid()) @db.Uuid
+
+    inputTokens  Int
+    outputTokens Int
+    inputCost    Decimal   @default(0)
+    outputCost   Decimal   @default(0)
+    cost         Float
+    type         UsageType @default(EXTERNAL)
+    billable     Boolean   @default(true)
+    baseModel    String?
+
+    fineTuneId String?   @db.Uuid
+    fineTune   FineTune? @relation(fields: [fineTuneId], references: [id], onDelete: SetNull)
+    projectId  String?   @db.Uuid
+    project    Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    invoiceId  String?   @db.Uuid
+    invoice    Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+    createdAt DateTime @default(now())
+
+    @@index([fineTuneId, createdAt, type])
+    @@index([projectId, createdAt, type])
+    @@index([invoiceId])
+}
+
+enum InvoiceStatus {
+    UNPAID
+    PAID
+    CANCELLED
+    REFUNDED
+    FREE
+}
+
+model Invoice {
+    id            String        @id @default(uuid()) @db.Uuid
+    amount        Decimal       @default(0)
+    status        InvoiceStatus @default(UNPAID)
+    slug          String
+    billingPeriod String? // MM YYYY
+    paidAt        DateTime?
+
+    description Json? // Array of objects: { [key: string]: string }
+    paymentId   String?
+
+    usageLogs         UsageLog[]
+    creditAdjustments CreditAdjustment[]
+
+    projectId String  @db.Uuid
+    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+
+    @@index([projectId, createdAt])
+}
+
+enum CreditAdjustmentType {
+    BONUS
+    REFUND
+    INVOICE
+}
+
+model CreditAdjustment {
+    id          String  @id @default(uuid()) @db.Uuid
+    amount      Decimal
+    description String?
+
+    projectId String  @db.Uuid
+    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+    invoiceId String?  @db.Uuid
+
+    type CreditAdjustmentType
+
+    createdAt DateTime @default(now())
+}
+
+enum ExportWeightsStatus {
+    PENDING
+    IN_PROGRESS
+    COMPLETE
+    ERROR
+}
+
+model ExportWeightsRequest {
+    id String @id @default(uuid()) @db.Uuid
+
+    s3Key         String
+    publicUrl     String @unique
+    weightsFormat String @default("fp32")
+
+    fineTuneId String   @db.Uuid
+    fineTune   FineTune @relation(fields: [fineTuneId], references: [id], onDelete: Cascade)
+
+    userId String @db.Uuid
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    status ExportWeightsStatus @default(PENDING)
+
+    createdAt DateTime @default(now())
+}
+
+model RateLimit {
+    key         String   @id
+    tokens      Int
+    // Whether the current request is allowed. Has to be a separate variable to track state.
+    allowed     Boolean
+    lastUpdated DateTime @db.Timestamptz
+}
+
+model OngoingRequest {
+    id        String @id @default(uuid()) @db.Uuid
+    projectId String @db.Uuid
+
+    createdAt DateTime @default(now())
+
+    @@index([projectId, createdAt])
+}
+
+enum NodeType {
+    Monitor
+    Archive
+    Filter
+    LLMRelabel
+    ManualRelabel
+    Dataset
+}
+
+model Node {
+    id     String   @id @default(uuid()) @db.Uuid
+    type   NodeType
+    name   String
+    config Json
+    hash   String
+    stale  Boolean  @default(false)
+
+    inputDataChannels      DataChannel[]
+    outputs                NodeOutput[]
+    datasetFileUploads     DatasetFileUpload[]
+    datasets               Dataset[]
+    cachedProcessedEntries CachedProcessedEntry[]
+
+    projectId String  @db.Uuid
+    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    creatorId String? @db.Uuid
+    creator   User?   @relation(fields: [creatorId], references: [id], onDelete: SetNull)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([projectId])
+}
+
+model NodeOutput {
+    id    String @id @default(uuid()) @db.Uuid
+    label String
+
+    dataChannel DataChannel[]
+
+    nodeId String @db.Uuid
+    node   Node   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+}
+
+model DataChannel {
+    id              String   @id @default(uuid()) @db.Uuid
+    lastProcessedAt DateTime @default("1970-01-01T00:00:00Z")
+
+    originId String?     @db.Uuid
+    origin   NodeOutput? @relation(fields: [originId], references: [id], onDelete: Cascade)
+
+    destinationId String @db.Uuid
+    destination   Node   @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+
+    nodeEntries NodeEntry[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([destinationId, id])
+}
+
+enum NodeEntryStatus {
+    PENDING
+    PROCESSING
+    ERROR
+    PROCESSED
+}
+
+model NodeEntry {
+    id           String            @id @default(uuid()) @db.Uuid
+    persistentId String
+    status       NodeEntryStatus   @default(PENDING)
+    error        String?
+    split        DatasetEntrySplit
+
+    loggedCallId String?     @db.Uuid
+    loggedCall   LoggedCall? @relation(fields: [loggedCallId], references: [id], onDelete: SetNull)
+
+    inputHash          String
+    outputHash         String
+    originalOutputHash String
+
+    dataChannelId String      @db.Uuid
+    dataChannel   DataChannel @relation(fields: [dataChannelId], references: [id], onDelete: Cascade)
+
+    parentNodeEntryId String?    @db.Uuid
+    parentNodeEntry   NodeEntry? @relation("ancestry", fields: [parentNodeEntryId], references: [id], onDelete: Cascade)
+
+    childrenNodeEntries NodeEntry[] @relation("ancestry")
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([parentNodeEntryId, dataChannelId])
+    @@index([dataChannelId, persistentId])
+    @@index([loggedCallId, dataChannelId])
+    @@index([dataChannelId, inputHash])
+}
+
+model DatasetEntryInput {
+    tool_choice     Json?
+    tools           Json   @default("[]")
+    messages        Json   @default("[]")
+    response_format Json?
+    inputTokens     Int?
+    hash            String @id
+
+    projectId String  @db.Uuid
+    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+
+    @@unique([hash])
+    @@index([projectId])
+}
+
+model DatasetEntryOutput {
+    output       Json
+    hash         String @id
+    outputTokens Int?
+
+    projectId String  @db.Uuid
+    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    createdAt DateTime @default(now())
+
+    @@unique([hash])
+    @@index([projectId])
+}
+
+model CachedProcessedEntry {
+    id String @id @default(uuid()) @db.Uuid
+
+    nodeHash              String?
+    nodeEntryPersistentId String?
+
+    nodeId String? @db.Uuid
+    node   Node?   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+    projectId String  @db.Uuid
+    project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+    incomingInputHash  String
+    incomingOutputHash String?
+    outgoingInputHash  String?
+    outgoingOutputHash String?
+    outgoingSplit      DatasetEntrySplit?
+
+    filterOutcome String?
+    explanation   String?
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@unique([nodeEntryPersistentId, incomingInputHash, nodeHash, incomingOutputHash])
+    @@index([nodeHash])
+    @@index([nodeId])
+    @@index([incomingInputHash, nodeHash])
+    @@index([incomingInputHash, nodeId])
+    @@index([projectId])
+}

@@ -1,0 +1,460 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "OpenPipe Internal API",
+    "description": "The internal API for trainer containers to query OpenPipe",
+    "version": "0.0.1"
+  },
+  "servers": [
+    {
+      "url": "https://app.openpipe.ai/api/internal/v1"
+    }
+  ],
+  "paths": {
+    "/training-info": {
+      "get": {
+        "operationId": "getTrainingInfo",
+        "description": "Get info necessary to train a model",
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "fineTuneId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "trainingDataUrl": {
+                      "type": "string"
+                    },
+                    "huggingFaceModelId": {
+                      "type": "string"
+                    },
+                    "trainingConfig": {
+                      "type": "object",
+                      "properties": {
+                        "model_type": {
+                          "type": "string",
+                          "enum": [
+                            "LlamaForCausalLM",
+                            "MistralForCausalLM",
+                            "MixtralForCausalLM"
+                          ]
+                        },
+                        "tokenizer_type": {
+                          "type": "string"
+                        },
+                        "is_llama_derived_model": {
+                          "type": "boolean"
+                        },
+                        "is_mistral_derived_model": {
+                          "type": "boolean"
+                        },
+                        "load_in_8bit": {
+                          "type": "boolean"
+                        },
+                        "load_in_4bit": {
+                          "type": "boolean"
+                        },
+                        "adapter": {
+                          "type": "string",
+                          "enum": [
+                            "lora",
+                            "qlora"
+                          ]
+                        },
+                        "model_config": {
+                          "type": "object",
+                          "properties": {
+                            "output_router_logits": {
+                              "type": "boolean"
+                            }
+                          },
+                          "additionalProperties": false
+                        },
+                        "sequence_len": {
+                          "type": "number"
+                        },
+                        "sample_packing": {
+                          "type": "boolean"
+                        },
+                        "eval_sample_packing": {
+                          "type": "boolean"
+                        },
+                        "pad_to_sequence_len": {
+                          "type": "boolean"
+                        },
+                        "lora_r": {
+                          "type": "number"
+                        },
+                        "lora_alpha": {
+                          "type": "number"
+                        },
+                        "lora_dropout": {
+                          "type": "number"
+                        },
+                        "lora_target_linear": {
+                          "type": "boolean"
+                        },
+                        "lora_target_modules": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "gradient_accumulation_steps": {
+                          "type": "number"
+                        },
+                        "micro_batch_size": {
+                          "type": "number"
+                        },
+                        "optimizer": {
+                          "type": "string"
+                        },
+                        "lr_scheduler": {
+                          "type": "string"
+                        },
+                        "learning_rate": {
+                          "type": "number"
+                        },
+                        "train_on_inputs": {
+                          "type": "boolean"
+                        },
+                        "group_by_length": {
+                          "type": "boolean"
+                        },
+                        "bf16": {
+                          "type": "boolean"
+                        },
+                        "fp16": {
+                          "type": "boolean"
+                        },
+                        "tf32": {
+                          "type": "boolean"
+                        },
+                        "gradient_checkpointing": {
+                          "type": "boolean"
+                        },
+                        "flash_attention": {
+                          "type": "boolean"
+                        },
+                        "warmup_steps": {
+                          "type": "number"
+                        },
+                        "weight_decay": {
+                          "type": "number"
+                        },
+                        "special_tokens": {
+                          "type": "object",
+                          "properties": {
+                            "bos_token": {
+                              "type": "string"
+                            },
+                            "eos_token": {
+                              "type": "string"
+                            },
+                            "unk_token": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "bos_token",
+                            "eos_token",
+                            "unk_token"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "base_model": {
+                          "type": "string"
+                        },
+                        "base_model_config": {
+                          "type": "string"
+                        },
+                        "datasets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "type"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "minItems": 1
+                        },
+                        "dataset_processes": {
+                          "type": "number"
+                        },
+                        "val_set_size": {
+                          "type": "number"
+                        },
+                        "output_dir": {
+                          "type": "string"
+                        },
+                        "wandb_project": {
+                          "type": "string"
+                        },
+                        "wandb_run_id": {
+                          "type": "string"
+                        },
+                        "num_epochs": {
+                          "type": "number"
+                        },
+                        "logging_steps": {
+                          "type": "number"
+                        },
+                        "save_safetensors": {
+                          "type": "boolean"
+                        },
+                        "eval_steps": {
+                          "type": "number"
+                        },
+                        "strict": {
+                          "type": "boolean"
+                        },
+                        "save_strategy": {
+                          "type": "string"
+                        },
+                        "deepspeed": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "model_type",
+                        "tokenizer_type",
+                        "load_in_8bit",
+                        "adapter",
+                        "sequence_len",
+                        "sample_packing",
+                        "lora_r",
+                        "lora_alpha",
+                        "lora_dropout",
+                        "lora_target_linear",
+                        "gradient_accumulation_steps",
+                        "micro_batch_size",
+                        "optimizer",
+                        "lr_scheduler",
+                        "learning_rate",
+                        "train_on_inputs",
+                        "group_by_length",
+                        "bf16",
+                        "fp16",
+                        "tf32",
+                        "gradient_checkpointing",
+                        "flash_attention",
+                        "warmup_steps",
+                        "weight_decay",
+                        "special_tokens",
+                        "base_model",
+                        "datasets",
+                        "val_set_size",
+                        "num_epochs"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "fireworksBaseModel": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "trainingDataUrl",
+                    "huggingFaceModelId",
+                    "trainingConfig"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/error"
+          }
+        }
+      }
+    },
+    "/export/get-info": {
+      "get": {
+        "operationId": "getModelExportInfo",
+        "description": "Get info necessary to export a model",
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "exportId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "baseModel": {
+                      "type": "string"
+                    },
+                    "fineTuneId": {
+                      "type": "string"
+                    },
+                    "s3BucketName": {
+                      "type": "string"
+                    },
+                    "s3Key": {
+                      "type": "string"
+                    },
+                    "weightsFormat": {
+                      "type": "string",
+                      "enum": [
+                        "fp32",
+                        "bf16",
+                        "fp16"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "baseModel",
+                    "fineTuneId",
+                    "s3BucketName",
+                    "s3Key",
+                    "weightsFormat"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/error"
+          }
+        }
+      }
+    },
+    "/export/complete": {
+      "post": {
+        "operationId": "reportModelExportComplete",
+        "description": "Report that a model export has completed",
+        "security": [
+          {
+            "Authorization": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "exportId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "exportId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "Authorization": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "responses": {
+      "error": {
+        "description": "Error response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "code": {
+                  "type": "string"
+                },
+                "issues": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "message": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "message"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "message",
+                "code"
+              ],
+              "additionalProperties": false
+            }
+          }
+        }
+      }
+    }
+  }
+}

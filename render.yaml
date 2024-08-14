@@ -1,0 +1,46 @@
+databases:
+  - name: querykey-prod
+    databaseName: querykey_prod
+    user: querykey
+    plan: "pro plus"
+
+services:
+  - type: web
+    name: querykey-prod-web
+    runtime: docker
+    dockerfilePath: ./app/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/healthcheck
+    plan: pro
+    domains:
+      - app.openpipe.ai
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: querykey-prod
+          property: connectionString
+      - fromGroup: querykey-prod
+      # Render support says we need to manually set this because otherwise
+      # sometimes it checks a different random port that NextJS opens for
+      # liveness and the liveness check fails.
+      - key: PORT
+        value: 10000
+    scaling:
+      minInstances: 1
+      maxInstances: 10
+      targetMemoryPercent: 60 # optional if targetCPUPercent is set (valid: 1-90)
+      targetCPUPercent: 60 # optional if targetMemory is set (valid: 1-90)
+
+  - type: worker
+    name: querykey-prod-worker
+    runtime: docker
+    dockerfilePath: ./app/Dockerfile
+    dockerContext: .
+    plan: pro plus
+    dockerCommand: /code/app/scripts/run-workers-prod.sh
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: querykey-prod
+          property: connectionString
+      - fromGroup: querykey-prod
